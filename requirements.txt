@@ -1,0 +1,12 @@
+chromadb
+FlagEmbedding
+sentence-transformers
+rank-bm25
+torch
+transformers
+tokenizers
+huggingface-hub
+numpy
+groq
+google-genai
+accelerate
