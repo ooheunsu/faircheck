@@ -1,0 +1,11 @@
+data/
+db/
+hf_cache/
+__pycache__/
+*.pyc
+*.pkl
+*.sqlite3
+*.log
+.env
+.venv/
+venv/
