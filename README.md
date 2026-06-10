@@ -34,7 +34,6 @@
 - ChromaDB collection: `statutes_bge`
 - Keyword index: statute BM25
 - Candidate merge: RRF
-- Reranker: `BAAI/bge-reranker-v2-m3` 또는 `none`
 
 의결서와 법령은 별도 저장소와 별도 검색기로 검색하고, 최종 RAG 분석 context에서 합칩니다. 즉, 의결서 검색 결과가 법령 검색 인덱스를 직접 오염시키지 않고, 법령 검색 결과도 의결서 chunk 검색 점수에 섞이지 않습니다.
 
@@ -70,9 +69,8 @@ build_chromadb_bge.py          # BGE-M3 기반 ChromaDB/BM25 구축
 retrieval.py                   # 초기 검색 실험
 retrieval_bge.py               # BGE-M3 기본 검색 실험
 retrieval_bge_experiment.py    # BGE-M3 + BM25 + RRF + reranker baseline
-statute_retrieval.py           # 법령 BGE-M3 + BM25 + RRF + reranker 검색기
+statute_retrieval.py           # 법령 BGE-M3 + BM25 + RRF 검색기
 search_statutes.py             # 법령 검색 CLI 실행 스크립트
-compare_statute_rerank.py      # 법령 reranker 사용/미사용 결과 비교 스크립트
 compare_models.py              # 임베딩 모델 비교 실험
 compare_models_fulltext.py     # fulltext 기반 모델 비교 실험
 enrich_*.py                    # 의결서 metadata 보강 실험
@@ -141,25 +139,6 @@ FAIRCHECK_STATUTE_COLLECTION=statutes_bge
 python search_statutes.py "하도급 대금 지급 지연" --top-k 3
 ```
 
-reranker 없이 RRF 결과만 빠르게 확인할 수도 있습니다.
-
-```powershell
-# BGE reranker를 생략하고 dense+BM25+RRF 결과만 봅니다.
-python search_statutes.py "하도급 대금 지급 지연" --top-k 3 --reranker none
-```
-
-reranker 사용 여부에 따른 속도와 순위 변화를 비교하려면:
-
-```powershell
-# 기본 쿼리 세트로 reranker none과 bge 결과를 비교합니다.
-python compare_statute_rerank.py
-```
-
-```powershell
-# 원하는 쿼리 하나만 비교합니다.
-python compare_statute_rerank.py "하도급 대금 지급 지연" --top-k 3 --candidate-size 20
-```
-
 ## Retrieval Pipeline
 
 현재 검색 흐름은 다음과 같습니다.
@@ -175,9 +154,9 @@ user query
   -> chunk results / document results / document context candidates
 ```
 
-RRF와 reranker는 별도 DB를 생성하지 않습니다. 검색 요청이 들어올 때마다 ChromaDB와 BM25 결과를 가져온 뒤 코드에서 계산됩니다.
+의결서 검색의 RRF와 reranker는 별도 DB를 생성하지 않습니다. 검색 요청이 들어올 때마다 ChromaDB와 BM25 결과를 가져온 뒤 코드에서 계산됩니다.
 
-법령 검색 흐름도 같은 원리입니다.
+법령 검색은 속도와 검색 품질 비교 결과를 반영해 reranker 없이 RRF까지만 적용합니다.
 
 ```text
 user query
@@ -185,7 +164,6 @@ user query
   -> statutes_bge dense search
   -> statute BM25 keyword search
   -> RRF candidate merge
-  -> optional reranker
   -> top_k statute results
 ```
 

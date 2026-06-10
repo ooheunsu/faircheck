@@ -11,7 +11,6 @@ def main() -> None:
     parser.add_argument("query", nargs="?", default="하도급 대금 지급 지연")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--candidate-size", type=int, default=30)
-    parser.add_argument("--reranker", choices=["none", "bge", "qwen"], default="bge")
     parser.add_argument("--dense-weight", type=float, default=1.0)
     parser.add_argument("--bm25-weight", type=float, default=1.0)
     args = parser.parse_args()
@@ -24,7 +23,6 @@ def main() -> None:
         top_k=args.top_k,
         config=StatuteSearchConfig(
             candidate_size=args.candidate_size,
-            reranker_backend=args.reranker,
             dense_weight=args.dense_weight,
             bm25_weight=args.bm25_weight,
         ),

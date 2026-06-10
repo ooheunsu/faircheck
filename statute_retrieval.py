@@ -6,7 +6,7 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import chromadb
 from FlagEmbedding import BGEM3FlagModel
@@ -21,8 +21,6 @@ DEFAULT_COLLECTION_NAME = "statutes_bge"
 TOKEN_RE = re.compile(r"[0-9A-Za-z가-힣]+")
 JO_RE = re.compile(r"제\s*([0-9]+(?:조의[0-9]+|조)?)")
 
-RerankerBackend = Literal["none", "bge", "qwen"]
-
 _kiwi = None
 _kiwi_checked = False
 
@@ -33,16 +31,10 @@ class StatuteSearchConfig:
     bm25_weight: float = 1.0
     rrf_k: int = 60
     candidate_size: int = 50
-    use_metadata_for_rerank: bool = True
-    reranker_backend: RerankerBackend = "bge"
-    reranker_model: str | None = None
-    rerank_batch_size: int = 8
-    max_rerank_chars: int | None = 3000
-    max_rerank_tokens: int = 2048
 
 
 class StatuteRetrievalService:
-    """BGE-M3 dense + statute BM25 + RRF + optional reranker retrieval."""
+    """BGE-M3 dense + statute BM25 + RRF statute retrieval."""
 
     def __init__(
         self,
@@ -85,11 +77,6 @@ class StatuteRetrievalService:
         self.bm25_metadatas = bm25_data["metadatas"]
 
         self.embedding_model = None
-        self.reranker_backend: RerankerBackend | None = None
-        self.reranker_model_name: str | None = None
-        self.reranker = None
-        self.reranker_tokenizer = None
-        self.reranker_device = None
 
     def health(self) -> dict[str, Any]:
         return {
@@ -131,17 +118,12 @@ class StatuteRetrievalService:
         candidates = self._get_candidates(rrf_top_ids)
         timings["rrf_and_fetch_sec"] = elapsed(started)
 
-        started = time.perf_counter()
-        ranked_candidates = self._rerank_or_keep(query, candidates, rrf_scores, config)
-        timings["rerank_sec"] = elapsed(started)
-
         return {
             "query": query,
             "mode": "statute_bge_m3_chroma_bm25_rrf",
-            "reranker_backend": config.reranker_backend,
             "results": [
                 format_statute_result(item, rrf_scores, dense_rank_map, bm25_rank_map)
-                for item in ranked_candidates[:top_k]
+                for item in candidates[:top_k]
             ],
             "timings": timings,
         }
@@ -241,123 +223,10 @@ class StatuteRetrievalService:
         result_map = {item["id"]: item for item in collection_items(candidate_results)}
         return [result_map[doc_id] for doc_id in ordered_ids if doc_id in result_map]
 
-    def _rerank_or_keep(
-        self,
-        query: str,
-        candidates: list[dict[str, Any]],
-        rrf_scores: dict[str, float],
-        config: StatuteSearchConfig,
-    ) -> list[dict[str, Any]]:
-        if config.reranker_backend == "none":
-            return [
-                {**candidate, "rerank_score": rrf_scores.get(candidate["id"], 0.0)}
-                for candidate in candidates
-            ]
-
-        reranker = self._get_reranker(config)
-        rerank_inputs = [
-            make_statute_rerank_text(
-                candidate["document"],
-                candidate["metadata"],
-                use_metadata=config.use_metadata_for_rerank,
-                max_chars=config.max_rerank_chars,
-            )
-            for candidate in candidates
-        ]
-
-        if config.reranker_backend == "bge":
-            scores = self._bge_rerank_scores(query, rerank_inputs, config)
-        elif config.reranker_backend == "qwen":
-            pairs = [(query, doc) for doc in rerank_inputs]
-            scores = reranker.predict(pairs, batch_size=config.rerank_batch_size)
-        else:
-            raise ValueError(f"Unsupported reranker backend: {config.reranker_backend}")
-
-        ranked = [
-            {**candidate, "rerank_score": float(score)}
-            for candidate, score in zip(candidates, scores)
-        ]
-        ranked.sort(key=lambda item: item["rerank_score"], reverse=True)
-        return ranked
-
-    def _bge_rerank_scores(
-        self,
-        query: str,
-        documents: list[str],
-        config: StatuteSearchConfig,
-    ) -> list[float]:
-        import torch
-
-        scores: list[float] = []
-
-        for start in range(0, len(documents), config.rerank_batch_size):
-            batch_docs = documents[start : start + config.rerank_batch_size]
-            batch_queries = [query] * len(batch_docs)
-
-            inputs = self.reranker_tokenizer(
-                batch_queries,
-                batch_docs,
-                padding=True,
-                truncation=True,
-                max_length=config.max_rerank_tokens,
-                return_tensors="pt",
-            )
-            inputs = {
-                key: value.to(self.reranker_device)
-                for key, value in inputs.items()
-            }
-
-            with torch.no_grad():
-                outputs = self.reranker(**inputs)
-                logits = outputs.logits
-                if logits.shape[-1] == 1:
-                    batch_scores = logits.squeeze(-1)
-                else:
-                    batch_scores = logits[:, 1]
-
-            scores.extend(batch_scores.float().cpu().tolist())
-
-        return scores
-
     def _get_embedding_model(self):
         if self.embedding_model is None:
             self.embedding_model = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True)
         return self.embedding_model
-
-    def _get_reranker(self, config: StatuteSearchConfig):
-        model_name = config.reranker_model or default_reranker_model(config.reranker_backend)
-        if (
-            self.reranker is not None
-            and self.reranker_backend == config.reranker_backend
-            and self.reranker_model_name == model_name
-        ):
-            return self.reranker
-
-        if config.reranker_backend == "bge":
-            import torch
-            from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
-            self.reranker_device = "cuda" if torch.cuda.is_available() else "cpu"
-            self.reranker_tokenizer = AutoTokenizer.from_pretrained(
-                model_name,
-                use_fast=True,
-            )
-            self.reranker = AutoModelForSequenceClassification.from_pretrained(
-                model_name,
-                trust_remote_code=True,
-            )
-            self.reranker.to(self.reranker_device)
-            self.reranker.eval()
-        elif config.reranker_backend == "qwen":
-            from sentence_transformers import CrossEncoder
-
-            self.reranker = CrossEncoder(model_name)
-        else:
-            raise ValueError(f"Unsupported reranker backend: {config.reranker_backend}")
-
-        self.reranker_backend = config.reranker_backend
-        self.reranker_model_name = model_name
-        return self.reranker
 
 
 def load_env_file(env_path: str | Path | None = None) -> None:
@@ -371,14 +240,6 @@ def load_env_file(env_path: str | Path | None = None) -> None:
             continue
         key, value = line.split("=", 1)
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-def default_reranker_model(backend: RerankerBackend) -> str | None:
-    if backend == "bge":
-        return "BAAI/bge-reranker-v2-m3"
-    if backend == "qwen":
-        return "Qwen/Qwen3-Reranker-0.6B"
-    return None
 
 
 def tokenize_korean(text: str) -> list[str]:
@@ -415,24 +276,6 @@ def rrf_score(rank: int, k: int = 60) -> float:
     return 1.0 / (k + rank)
 
 
-def make_statute_rerank_text(
-    doc: str,
-    meta: dict[str, Any],
-    use_metadata: bool = True,
-    max_chars: int | None = None,
-) -> str:
-    if max_chars is not None:
-        doc = doc[:max_chars]
-    if not use_metadata:
-        return doc
-    return (
-        f"법률명: {meta.get('law_title', '')}\n"
-        f"조문번호: {meta.get('jo_number', '')}\n"
-        f"조문제목: {meta.get('jo_title', '')}\n"
-        f"본문: {doc}"
-    )
-
-
 def format_statute_result(
     candidate: dict[str, Any],
     rrf_scores: dict[str, float],
@@ -442,14 +285,15 @@ def format_statute_result(
     doc_id = candidate["id"]
     meta = candidate["metadata"]
     document = candidate["document"]
+    score = float(rrf_scores.get(doc_id, 0.0))
     return {
         "statute_id": meta.get("statute_id", doc_id),
         "law_title": meta.get("law_title", ""),
         "jo_number": meta.get("jo_number", ""),
         "jo_title": meta.get("jo_title", ""),
         "doc_type": meta.get("doc_type", "statute"),
-        "rerank_score": round(float(candidate.get("rerank_score", 0.0)), 6),
-        "rrf_score": round(float(rrf_scores.get(doc_id, 0.0)), 6),
+        "score": round(score, 6),
+        "rrf_score": round(score, 6),
         "dense_rank": dense_rank_map.get(doc_id),
         "bm25_rank": bm25_rank_map.get(doc_id),
         "snippet": document[:300].replace("\n", " "),

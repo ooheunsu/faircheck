@@ -5,7 +5,6 @@ from statute_retrieval import (
     StatuteSearchConfig,
     format_statute_result,
     infer_jo_number,
-    make_statute_rerank_text,
     rrf_score,
     tokenize_korean,
 )
@@ -39,20 +38,6 @@ class StatuteRetrievalTest(unittest.TestCase):
         self.assertEqual(dense_ranks["a"], 1)
         self.assertEqual(bm25_ranks["c"], 2)
 
-    def test_rerank_text_includes_statute_metadata(self):
-        text = make_statute_rerank_text(
-            "제1조 본문",
-            {
-                "law_title": "하도급거래 공정화에 관한 법률",
-                "jo_number": "1조",
-                "jo_title": "목적",
-            },
-        )
-
-        self.assertIn("법률명: 하도급거래 공정화에 관한 법률", text)
-        self.assertIn("조문번호: 1조", text)
-        self.assertIn("본문: 제1조 본문", text)
-
     def test_format_result_exposes_statute_fields(self):
         result = format_statute_result(
             {
@@ -65,7 +50,6 @@ class StatuteRetrievalTest(unittest.TestCase):
                     "jo_title": "목적",
                     "doc_type": "statute",
                 },
-                "rerank_score": 0.5,
             },
             {"LAW-하도급법-1조": 0.25},
             {"LAW-하도급법-1조": 1},
@@ -74,6 +58,7 @@ class StatuteRetrievalTest(unittest.TestCase):
 
         self.assertEqual(result["statute_id"], "LAW-하도급법-1조")
         self.assertEqual(result["law_title"], "하도급거래 공정화에 관한 법률")
+        self.assertEqual(result["score"], 0.25)
         self.assertEqual(result["dense_rank"], 1)
 
     def test_infer_jo_number(self):
