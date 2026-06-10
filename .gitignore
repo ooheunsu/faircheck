@@ -1,6 +1,7 @@
 data/
 db/
 hf_cache/
+/D:*
 __pycache__/
 *.pyc
 *.pkl
