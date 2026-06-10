@@ -72,6 +72,7 @@ retrieval_bge.py               # BGE-M3 기본 검색 실험
 retrieval_bge_experiment.py    # BGE-M3 + BM25 + RRF + reranker baseline
 statute_retrieval.py           # 법령 BGE-M3 + BM25 + RRF + reranker 검색기
 search_statutes.py             # 법령 검색 CLI 실행 스크립트
+compare_statute_rerank.py      # 법령 reranker 사용/미사용 결과 비교 스크립트
 compare_models.py              # 임베딩 모델 비교 실험
 compare_models_fulltext.py     # fulltext 기반 모델 비교 실험
 enrich_*.py                    # 의결서 metadata 보강 실험
@@ -145,6 +146,18 @@ reranker 없이 RRF 결과만 빠르게 확인할 수도 있습니다.
 ```powershell
 # BGE reranker를 생략하고 dense+BM25+RRF 결과만 봅니다.
 python search_statutes.py "하도급 대금 지급 지연" --top-k 3 --reranker none
+```
+
+reranker 사용 여부에 따른 속도와 순위 변화를 비교하려면:
+
+```powershell
+# 기본 쿼리 세트로 reranker none과 bge 결과를 비교합니다.
+python compare_statute_rerank.py
+```
+
+```powershell
+# 원하는 쿼리 하나만 비교합니다.
+python compare_statute_rerank.py "하도급 대금 지급 지연" --top-k 3 --candidate-size 20
 ```
 
 ## Retrieval Pipeline
