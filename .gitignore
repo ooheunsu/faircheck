@@ -1,5 +1,7 @@
 data/
-db/
+db/*
+!db/.gitkeep
+!db/*.dvc
 hf_cache/
 __pycache__/
 *.pyc

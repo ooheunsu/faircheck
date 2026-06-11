@@ -1,0 +1,5 @@
+outs:
+- md5: b746686cc539ffbfd0bf54774d6e5aca
+  size: 74216308
+  hash: md5
+  path: bm25_index.pkl
