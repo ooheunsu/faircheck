@@ -11,6 +11,13 @@ from typing import Any
 import chromadb
 from FlagEmbedding import BGEM3FlagModel
 
+"""법령 전용 검색기.
+
+risk_analysis_pipeline.py에서 StatuteRetrievalService를 import해 사용합니다.
+역할은 두 가지입니다.
+1. 사용자 쿼리로 관련 법령을 직접 검색합니다.
+2. 의결서 metadata에서 뽑은 "하도급법 제13조" 같은 인용문으로 조문을 직접 조회합니다.
+"""
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -27,6 +34,7 @@ _kiwi_checked = False
 
 @dataclass(frozen=True)
 class StatuteSearchConfig:
+    # 법령 검색 설정입니다. 법령은 현재 reranker 없이 dense + BM25 + RRF까지만 사용합니다.
     dense_weight: float = 1.0
     bm25_weight: float = 1.0
     rrf_k: int = 60
@@ -42,6 +50,8 @@ class StatuteRetrievalService:
         bm25_path: str | Path | None = None,
         collection_name: str | None = None,
     ) -> None:
+        # __init__에서 법령 ChromaDB, BM25 pickle을 로딩합니다.
+        # embedding_model은 실제 검색이 처음 실행될 때 lazy loading으로 불러옵니다.
         load_env_file()
 
         self.chroma_dir = Path(
@@ -96,6 +106,8 @@ class StatuteRetrievalService:
         top_k: int = 5,
         config: StatuteSearchConfig | None = None,
     ) -> dict[str, Any]:
+        # 사용자 쿼리 기반 법령 검색입니다.
+        # dense 검색과 BM25 검색 결과를 RRF로 합쳐 top_k 조문을 반환합니다.
         config = config or StatuteSearchConfig()
         timings: dict[str, float] = {}
 
@@ -129,6 +141,8 @@ class StatuteRetrievalService:
         }
 
     def get_by_citations(self, citations: list[str], top_k: int = 8) -> list[dict[str, Any]]:
+        # 의결서에서 수집한 법령 인용문으로 조문을 직접 조회합니다.
+        # 예: "하도급거래 공정화에 관한 법률 제13조 제1항" -> law_title + jo_number로 ChromaDB 조회
         seen: set[str] = set()
         results: list[dict[str, Any]] = []
 
@@ -224,12 +238,15 @@ class StatuteRetrievalService:
         return [result_map[doc_id] for doc_id in ordered_ids if doc_id in result_map]
 
     def _get_embedding_model(self):
+        # 법령 검색 모델은 처음 필요할 때만 로딩합니다.
+        # 이렇게 하면 get_by_citations()만 쓸 때는 무거운 임베딩 모델을 로딩하지 않아도 됩니다.
         if self.embedding_model is None:
             self.embedding_model = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True)
         return self.embedding_model
 
 
 def load_env_file(env_path: str | Path | None = None) -> None:
+    # .env 파일을 읽어서 법령 ChromaDB/BM25 경로를 환경변수로 올립니다.
     path = Path(env_path) if env_path is not None else PROJECT_ROOT / ".env"
     if not path.exists():
         return
@@ -239,10 +256,12 @@ def load_env_file(env_path: str | Path | None = None) -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        os.environ[key.strip()] = value.strip().strip('"').strip("'")
 
 
 def tokenize_korean(text: str) -> list[str]:
+    # BM25는 문장을 token list로 바꿔야 점수를 계산할 수 있습니다.
+    # kiwipiepy가 설치되어 있으면 한국어 형태소 분석을 쓰고, 없으면 간단한 n-gram 방식으로 대체합니다.
     global _kiwi, _kiwi_checked
 
     try:
@@ -313,18 +332,31 @@ def collection_items(fetched: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def infer_law_title(citation: str) -> str | None:
-    known_titles = [
-        "독점규제 및 공정거래에 관한 법률",
-        "가맹사업거래의 공정화에 관한 법률",
-        "하도급거래 공정화에 관한 법률",
-    ]
-    for title in known_titles:
-        if title in citation:
+    # 의결서 metadata의 법령명이 약칭으로 들어와도 정식 법령명으로 맞춰줍니다.
+    # 예: "하도급법" -> "하도급거래 공정화에 관한 법률"
+    known_titles = {
+        "독점규제 및 공정거래에 관한 법률": [
+            "독점규제 및 공정거래에 관한 법률",
+            "공정거래법",
+            "독점규제법",
+        ],
+        "가맹사업거래의 공정화에 관한 법률": [
+            "가맹사업거래의 공정화에 관한 법률",
+            "가맹사업법",
+        ],
+        "하도급거래 공정화에 관한 법률": [
+            "하도급거래 공정화에 관한 법률",
+            "하도급법",
+        ],
+    }
+    for title, aliases in known_titles.items():
+        if any(alias in citation for alias in aliases):
             return title
     return None
 
 
 def infer_jo_number(citation: str) -> str | None:
+    # "제13조", "제13조의2" 같은 조문 번호를 문자열에서 뽑습니다.
     match = JO_RE.search(citation)
     if not match:
         return None
