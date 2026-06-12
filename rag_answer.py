@@ -163,7 +163,7 @@ ANSWER_FORMAT = """\
 
 
 def format_context(doc_contexts, max_chars_per_chunk=1200):
-    # retriever.py가 만든 의결서 doc_contexts를 Gemini 프롬프트용 텍스트로 바꿉니다.
+    # decision_retriever.py가 만든 의결서 doc_contexts를 Gemini 프롬프트용 텍스트로 바꿉니다.
     # [문서 1], [문서 1-근거 1] 같은 번호도 여기서 붙습니다.
     sections = []
 
@@ -723,7 +723,7 @@ def main():
 
     search_query = analysis.get("search_query") or question
 
-    from retriever import FaircheckRetriever, RetrieverConfig
+    from decision_retriever import FaircheckRetriever, RetrieverConfig
 
     config = RetrieverConfig(
         candidate_size=args.candidate_size,

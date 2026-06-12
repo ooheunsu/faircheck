@@ -30,12 +30,12 @@ from rag_answer import (
     format_context_preview,
     format_reference_ids,
 )
-# retriever.py는 친구가 만든 의결서 검색기입니다.
+# decision_retriever.py는 친구가 만든 의결서 검색기입니다.
 # BGE-M3 dense 검색 + BM25 + RRF + reranker로 유사 의결서 chunk를 찾습니다.
-from retriever import FaircheckRetriever, RetrieverConfig
-# statute_retrieval.py는 우리가 만든 법령 검색기입니다.
+from decision_retriever import FaircheckRetriever, RetrieverConfig
+# statute_retriever.py는 우리가 만든 법령 검색기입니다.
 # BGE-M3 dense 검색 + BM25 + RRF로 관련 법령 조문을 찾습니다.
-from statute_retrieval import (
+from statute_retriever import (
     StatuteRetrievalService,
     StatuteSearchConfig,
     load_env_file,
@@ -94,7 +94,7 @@ class RiskAnalysisPipeline:
         self.config = config or RiskAnalysisConfig()
 
         # 친구 의결서 검색기 설정입니다. 통합 파이프라인의 설정값을
-        # retriever.py의 RetrieverConfig 형식으로 바꿔 넘깁니다.
+        # decision_retriever.py의 RetrieverConfig 형식으로 바꿔 넘깁니다.
         decision_config = RetrieverConfig(
             candidate_size=self.config.decision_candidate_size,
             doc_top_k=self.config.decision_doc_top_k,
@@ -226,7 +226,7 @@ class RiskAnalysisPipeline:
 def collect_related_law_citations(doc_contexts: list[dict[str, Any]]) -> list[str]:
     """의결서 context에서 관련 법령 문자열만 모읍니다.
 
-    doc_contexts는 retriever.py가 만든 RAG용 의결서 묶음입니다.
+    doc_contexts는 decision_retriever.py가 만든 RAG용 의결서 묶음입니다.
     각 문서 meta와 chunk meta를 훑으면서 LAW_META_KEYS에 해당하는 값을 찾습니다.
     """
     citations: list[str] = []

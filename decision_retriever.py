@@ -5,6 +5,7 @@ from pathlib import Path
 
 """의결서 전용 검색기.
 
+파일 이름은 법령 검색기(statute_retriever.py)와 형식을 맞춰 decision_retriever.py로 정리했습니다.
 risk_analysis_pipeline.py에서 FaircheckRetriever를 import해 사용합니다.
 역할은 사용자 검색 질의와 비슷한 공정위 의결서 chunk를 찾고,
 LLM에 넣기 좋은 문서 단위 context(doc_contexts)를 만드는 것입니다.

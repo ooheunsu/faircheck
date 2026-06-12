@@ -1,6 +1,6 @@
 import unittest
 
-from statute_retrieval import (
+from statute_retriever import (
     StatuteRetrievalService,
     StatuteSearchConfig,
     format_statute_result,

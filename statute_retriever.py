@@ -13,6 +13,7 @@ from FlagEmbedding import BGEM3FlagModel
 
 """법령 전용 검색기.
 
+파일 이름은 의결서 검색기(decision_retriever.py)와 맞춰 statute_retriever.py로 정리했습니다.
 risk_analysis_pipeline.py에서 StatuteRetrievalService를 import해 사용합니다.
 역할은 두 가지입니다.
 1. 사용자 쿼리로 관련 법령을 직접 검색합니다.

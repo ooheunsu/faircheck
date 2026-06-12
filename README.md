@@ -64,17 +64,13 @@ db/statute_bm25_index.pkl
 ## 주요 파일
 
 ```text
-build_chromadb.py              # ko-sroberta 기반 ChromaDB/BM25 구축 실험
-build_chromadb_bge.py          # BGE-M3 기반 ChromaDB/BM25 구축
-retrieval.py                   # 초기 검색 실험
-retrieval_bge.py               # BGE-M3 기본 검색 실험
-retrieval_bge_experiment.py    # BGE-M3 + BM25 + RRF + reranker baseline
-statute_retrieval.py           # 법령 BGE-M3 + BM25 + RRF 검색기
-search_statutes.py             # 법령 검색 CLI 실행 스크립트
-compare_models.py              # 임베딩 모델 비교 실험
-compare_models_fulltext.py     # fulltext 기반 모델 비교 실험
-enrich_*.py                    # 의결서 metadata 보강 실험
-eda_enriched.py                # 보강 metadata EDA
+decision_retriever.py          # 의결서 BGE-M3 + BM25 + RRF + reranker 검색기
+statute_retriever.py           # 법령 BGE-M3 + BM25 + RRF 검색기
+risk_analysis_pipeline.py      # 의결서 검색 + 법령 검색 + Gemini 답변 생성 통합 실행 파일
+rag_answer.py                  # 질의 분석, RAG 프롬프트, Gemini 호출 함수
+run_risk_analysis_batch.py     # 여러 사용자 쿼리를 한 번에 실행하고 txt 결과 저장
+search_statutes.py             # 법령 검색기만 단독 확인하는 CLI
+test_statute_retriever.py      # 법령 검색 보조 함수 테스트
 ```
 
 ## Setup
@@ -85,30 +81,7 @@ Python 3.11 기준으로 실험했습니다.
 python -m pip install -r requirements.txt
 ```
 
-Hugging Face 모델 캐시는 C 드라이브가 아니라 프로젝트 하위 캐시 경로를 사용합니다.
-
-```powershell
-$env:HF_HOME="D:\faircheck\hf_cache\huggingface"
-$env:TRANSFORMERS_CACHE="D:\faircheck\hf_cache\transformers"
-$env:SENTENCE_TRANSFORMERS_HOME="D:\faircheck\hf_cache\sentence_transformers"
-$env:TORCH_HOME="D:\faircheck\hf_cache\torch"
-```
-
-`retrieval_bge_experiment.py`에는 위 캐시 경로가 import 전에 코드로도 설정되어 있습니다.
-
-## Run Baseline Retrieval
-
-필수 artifact가 준비된 상태에서 실행합니다.
-
-```powershell
-python retrieval_bge_experiment.py
-```
-
-전체 로그를 파일로 남기려면:
-
-```powershell
-python retrieval_bge_experiment.py 2>&1 | Tee-Object -FilePath bge_baseline_result.txt
-```
+Hugging Face 모델 캐시 경로는 필요할 때 `.env`에서 `FAIRCHECK_HF_HOME` 등으로 지정할 수 있습니다. 생략하면 Hugging Face 기본 캐시를 사용합니다.
 
 ## Run Statute Retrieval
 
@@ -137,6 +110,24 @@ FAIRCHECK_STATUTE_COLLECTION=statutes_bge
 ```powershell
 # 법령 전용 검색기를 실행합니다.
 python search_statutes.py "하도급 대금 지급 지연" --top-k 3
+```
+
+## Run Risk Analysis Pipeline
+
+의결서 검색, 법령 검색, Gemini 답변 생성을 함께 실행합니다.
+
+```powershell
+# Gemini 호출 없이 통합 프롬프트까지만 확인합니다.
+python risk_analysis_pipeline.py --provider dry-run --question "하도급 대금 지급 지연"
+
+# Gemini까지 호출해 최종 답변을 생성합니다.
+python risk_analysis_pipeline.py --provider gemini --question "하도급 대금 지급 지연"
+```
+
+여러 쿼리를 한 번에 실행하고 txt 파일로 저장하려면:
+
+```powershell
+python run_risk_analysis_batch.py --provider gemini --output risk_analysis_8q_results.txt
 ```
 
 ## Retrieval Pipeline
@@ -180,4 +171,4 @@ user query
 
 ## Next Step
 
-검색 실험은 `BAAI/bge-reranker-v2-m3` baseline으로 마무리하고, 다음 단계에서는 검색 로직을 `retriever.py`로 분리한 뒤 RAG 답변 생성 코드를 작성합니다.
+다음 단계에서는 `risk_analysis_pipeline.py`의 반환 구조를 FastAPI/Pydantic 응답 모델로 고정하고, 프론트엔드에서 의결서/법령 근거 카드를 클릭해 원문 PDF와 연결할 수 있도록 API 응답 필드를 정리합니다.
