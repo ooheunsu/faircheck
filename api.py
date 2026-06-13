@@ -7,13 +7,17 @@ from __future__ import annotations
 out_of_scope 중 어디에 해당하더라도 같은 JSON 구조로 받을 수 있습니다.
 """
 
+import os
 import re
 import time
+import unicodedata
+from pathlib import Path
 from threading import Lock
 from types import SimpleNamespace
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
@@ -115,6 +119,7 @@ class StatuteReference(BaseModel):
     jo_number: str | None = None
     jo_title: str | None = None
     evidence_source: str | None = None
+    content: str | None = None
 
 
 class RiskAnalysisTimings(BaseModel):
@@ -181,6 +186,84 @@ app.add_middleware(
 
 _pipeline: RiskAnalysisPipeline | None = None
 _pipeline_lock = Lock()
+
+
+def decision_pdf_dir() -> Path:
+    """의결서 원문 PDF 폴더를 .env에서 읽어옵니다."""
+
+    configured = os.getenv("FAIRCHECK_DECISION_PDF_DIR", "").strip()
+    if not configured:
+        raise HTTPException(
+            status_code=500,
+            detail="FAIRCHECK_DECISION_PDF_DIR가 .env에 설정되어 있지 않습니다.",
+        )
+
+    pdf_dir = Path(configured).expanduser()
+    if not pdf_dir.is_dir():
+        raise HTTPException(
+            status_code=500,
+            detail=f"Decision PDF directory not found: {pdf_dir}",
+        )
+    return pdf_dir
+
+
+def pdf_name_candidates(raw_filename: str) -> list[str]:
+    """DB metadata에 들어온 원본 파일명을 실제 PDF 파일명 후보로 바꿉니다.
+
+    의결서 metadata에는 PDF 파일명이 바로 들어올 수도 있고, metadata/hybrid JSON명이
+    들어올 수도 있습니다. 브라우저에서 받은 값은 파일명만 사용해 경로 조작을 막습니다.
+    """
+
+    filename = Path(raw_filename).name.strip()
+    if not filename:
+        return []
+
+    candidates = [filename]
+    if filename.endswith("_metadata.json"):
+        candidates.append(filename.replace("_metadata.json", ".pdf"))
+    if filename.endswith("_hybrid.json"):
+        candidates.append(filename.replace("_hybrid.json", ".pdf"))
+    if not filename.lower().endswith(".pdf"):
+        candidates.append(f"{filename}.pdf")
+
+    unique_candidates = []
+    for candidate in candidates:
+        if candidate not in unique_candidates:
+            unique_candidates.append(candidate)
+    return unique_candidates
+
+
+def find_decision_pdf(raw_filename: str) -> Path:
+    """원문 PDF 폴더에서 요청한 의결서 PDF를 찾습니다."""
+
+    pdf_dir = decision_pdf_dir()
+    candidates = pdf_name_candidates(raw_filename)
+
+    for candidate in candidates:
+        direct_path = pdf_dir / candidate
+        if direct_path.is_file() and direct_path.suffix.lower() == ".pdf":
+            return direct_path
+
+    normalized_candidates = {
+        unicodedata.normalize("NFC", candidate)
+        for candidate in candidates
+        if candidate.lower().endswith(".pdf")
+    }
+    normalized_candidates.update(
+        unicodedata.normalize("NFD", candidate)
+        for candidate in candidates
+        if candidate.lower().endswith(".pdf")
+    )
+
+    for pdf_path in pdf_dir.glob("*.pdf"):
+        normalized_name = {
+            unicodedata.normalize("NFC", pdf_path.name),
+            unicodedata.normalize("NFD", pdf_path.name),
+        }
+        if normalized_name & normalized_candidates:
+            return pdf_path
+
+    raise HTTPException(status_code=404, detail=f"PDF not found: {Path(raw_filename).name}")
 
 
 def get_pipeline() -> RiskAnalysisPipeline:
@@ -271,6 +354,7 @@ def statute_references_from(result: dict[str, Any]) -> list[StatuteReference]:
             jo_number=item.get("jo_number"),
             jo_title=item.get("jo_title"),
             evidence_source=item.get("evidence_source"),
+            content=item.get("content"),
         )
         for item in result.get("statute_references", [])
     ]
@@ -339,6 +423,19 @@ def split_references_by_usage(
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", pipeline_loaded=_pipeline is not None)
+
+
+@app.get("/api/decision-pdfs/{filename:path}")
+def get_decision_pdf(filename: str) -> FileResponse:
+    """의결서 근거 카드에서 PDF 원문을 열 때 사용하는 endpoint입니다."""
+
+    pdf_path = find_decision_pdf(filename)
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=pdf_path.name,
+        content_disposition_type="inline",
+    )
 
 
 @app.post("/api/risk-analysis", response_model=RiskAnalysisResponse)
