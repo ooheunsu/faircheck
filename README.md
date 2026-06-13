@@ -68,6 +68,7 @@ decision_retriever.py          # 의결서 BGE-M3 + BM25 + RRF + reranker 검색
 statute_retriever.py           # 법령 BGE-M3 + BM25 + RRF 검색기
 risk_analysis_pipeline.py      # 의결서 검색 + 법령 검색 + Gemini 답변 생성 통합 실행 파일
 rag_answer.py                  # 질의 분석, RAG 프롬프트, Gemini 호출 함수
+api.py                         # FastAPI/Pydantic API endpoint
 run_risk_analysis_batch.py     # 여러 사용자 쿼리를 한 번에 실행하고 txt 결과 저장
 search_statutes.py             # 법령 검색기만 단독 확인하는 CLI
 test_statute_retriever.py      # 법령 검색 보조 함수 테스트
@@ -130,6 +131,54 @@ python risk_analysis_pipeline.py --provider gemini --question "하도급 대금 
 python run_risk_analysis_batch.py --provider gemini --output risk_analysis_8q_results.txt
 ```
 
+## Run FastAPI
+
+프론트엔드 연결용 API 서버를 실행합니다.
+
+```powershell
+# 로컬 API 서버를 실행합니다.
+uvicorn api:app --reload --host 127.0.0.1 --port 8000
+```
+
+주요 endpoint:
+
+```text
+GET  /health
+POST /api/risk-analysis
+```
+
+요청 예시:
+
+```json
+{
+  "question": "커피 가맹점주인데 계약서상 보장된 영업지역 100m 안에 본사가 직영점을 열겠다고 합니다.",
+  "provider": "gemini",
+  "query_analysis": "auto",
+  "include_prompt": false
+}
+```
+
+응답은 세 가지 경우를 같은 JSON 구조로 반환합니다.
+
+```text
+result_type = "risk_analysis"         # 검색과 답변 생성까지 수행
+result_type = "needs_clarification"   # 추가 사실 확인이 필요해 검색 전 보수적으로 중단
+result_type = "out_of_scope"          # 공정거래 의결서 기반 서비스 범위 밖
+```
+
+`risk_analysis` 응답에서는 근거 목록을 두 방식으로 제공합니다.
+
+```text
+decision_references / statute_references
+  -> 검색과 법령 조회로 확보한 전체 후보 근거입니다. 디버깅이나 추가 검토에 사용합니다.
+
+used_decision_references / used_statute_references
+  -> 최종 answer 본문에서 실제로 [문서 n], [법령 n] 형태로 인용된 핵심 근거입니다.
+
+additional_decision_references / additional_statute_references
+  -> 후보에는 있었지만 최종 answer 본문에서 직접 인용되지는 않은 추가 참고 근거입니다.
+```
+
 ## Retrieval Pipeline
 
 현재 검색 흐름은 다음과 같습니다.
@@ -171,4 +220,4 @@ user query
 
 ## Next Step
 
-다음 단계에서는 `risk_analysis_pipeline.py`의 반환 구조를 FastAPI/Pydantic 응답 모델로 고정하고, 프론트엔드에서 의결서/법령 근거 카드를 클릭해 원문 PDF와 연결할 수 있도록 API 응답 필드를 정리합니다.
+다음 단계에서는 프론트엔드에서 `/api/risk-analysis`를 호출해 입력창, 로딩 상태, 답변 영역, 의결서/법령 근거 카드를 구성합니다. 이후 의결서 카드 클릭 시 원문 PDF와 연결할 수 있도록 `decision_references`의 `pdf_source`와 chunk 정보를 활용합니다.
