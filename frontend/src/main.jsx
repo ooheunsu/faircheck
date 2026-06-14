@@ -116,6 +116,11 @@ function App() {
         </div>
       </section>
 
+      <p className="fixed-disclaimer">
+        이 서비스는 공정위 의결서와 보유 법령 DB를 바탕으로 한 사전 점검 도구이며,
+        최종 법률 판단이나 법률 자문이 아닙니다.
+      </p>
+
       {error && <div className="error-banner">{error}</div>}
       {isLoading && <LoadingTrace activeStep={activeStep} />}
 
@@ -165,7 +170,11 @@ function RiskResult({ result }) {
         </div>
         <div className="badge-group">
           <span className={`status-badge ${result.result_type}`}>{statusLabel}</span>
-          {riskLevel && <span className="risk-badge">위반 가능성 {riskLevel}</span>}
+          {riskLevel && (
+            <span className={`risk-badge ${riskLevelClass(riskLevel)}`}>
+              {riskLevelIcon(riskLevel)} 위반 가능성 {riskLevel}
+            </span>
+          )}
         </div>
       </header>
 
@@ -250,12 +259,22 @@ function linkAnswerReferences(text, result, onOpenStatute) {
     .sort((left, right) => right.text.length - left.text.length);
 
   return text.split("\n").map((line, lineIndex) => {
+    if (shouldHideAnswerLine(line)) return null;
     if (isReferenceOnlyLine(line)) return null;
 
     const pieces = renderAnswerLine(line, lineIndex, decisionPdfById, answerLinks);
+    const lineClass = answerLineClass(line);
+
+    if (lineClass === "answer-section-title") {
+      return (
+        <h4 key={lineIndex} className={lineClass}>
+          {pieces.length ? pieces : "\u00A0"}
+        </h4>
+      );
+    }
 
     return (
-      <p key={lineIndex} className={answerLineClass(line)}>
+      <p key={lineIndex} className={lineClass}>
         {pieces.length ? pieces : "\u00A0"}
       </p>
     );
@@ -287,18 +306,30 @@ function statuteAnswerLinks(statuteReferences, onOpenStatute) {
 }
 
 function statuteTitleCandidates(lawTitle, joNumber, joTitle) {
+  const joNumbers = joNumberVariants(joNumber);
   const candidates = [
-    [lawTitle, joNumber && joTitle && `${joNumber}(${joTitle})`].filter(Boolean).join(" "),
-    [lawTitle, joNumber && joTitle && `${joNumber} (${joTitle})`].filter(Boolean).join(" "),
-    [lawTitle, joNumber].filter(Boolean).join(" "),
-    lawTitle && joNumber && joTitle ? `${lawTitle}${joNumber}(${joTitle})` : "",
-    lawTitle && joNumber ? `${lawTitle}${joNumber}` : "",
-    joNumber && joTitle ? `${joNumber}(${joTitle})` : "",
-    joNumber && joTitle ? `${joNumber} (${joTitle})` : "",
     joTitle || "",
-  ].filter(Boolean);
+  ];
 
-  return [...new Set(candidates)];
+  for (const number of joNumbers) {
+    candidates.push(
+      [lawTitle, number && joTitle && `${number}(${joTitle})`].filter(Boolean).join(" "),
+      [lawTitle, number && joTitle && `${number} (${joTitle})`].filter(Boolean).join(" "),
+      [lawTitle, number].filter(Boolean).join(" "),
+      lawTitle && number && joTitle ? `${lawTitle}${number}(${joTitle})` : "",
+      lawTitle && number ? `${lawTitle}${number}` : "",
+      number && joTitle ? `${number}(${joTitle})` : "",
+      number && joTitle ? `${number} (${joTitle})` : ""
+    );
+  }
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+function joNumberVariants(joNumber = "") {
+  const compact = joNumber.replace(/\s+/g, "");
+  const spaced = compact.replace(/조의(\d+)/, "조의 $1");
+  return [...new Set([joNumber, compact, spaced].filter(Boolean))];
 }
 
 function renderAnswerLine(line, lineIndex, decisionPdfById, answerLinks) {
@@ -407,6 +438,14 @@ function isReferenceOnlyLine(line) {
   );
 }
 
+function shouldHideAnswerLine(line) {
+  const trimmed = line.trim();
+  return (
+    /^4\.\s*주의/.test(trimmed) ||
+    /최종\s*법률\s*판단|법률\s*자문/.test(trimmed)
+  );
+}
+
 function answerLineClass(line) {
   const trimmed = line.trim();
   if (!trimmed) return "blank-line";
@@ -488,6 +527,9 @@ function EvidenceCard({ item, type, onOpenStatute }) {
         </h4>
       )}
       {subtitle && <p>{subtitle}</p>}
+      {type === "statute" && item.content && (
+        <p className="statute-excerpt">원문 일부: {statuteExcerpt(item.content)}</p>
+      )}
       {type === "decision" && item.chunks?.length > 0 && (
         <details className="debug-details">
           <summary>검색 근거 정보</summary>
@@ -585,6 +627,12 @@ function cleanStatuteContent(content = "") {
     .trim();
 }
 
+function statuteExcerpt(content = "") {
+  const cleaned = cleanStatuteContent(content).replace(/\s+/g, " ").trim();
+  if (cleaned.length <= 120) return cleaned;
+  return `${cleaned.slice(0, 120)}...`;
+}
+
 function getStatusLabel(resultType) {
   if (resultType === "risk_analysis") return "진단 가능";
   if (resultType === "needs_clarification") return "추가 정보 필요";
@@ -594,6 +642,20 @@ function getStatusLabel(resultType) {
 function extractRiskLevel(answer = "") {
   const match = answer.match(/위반 가능성:\s*(높음|중간|낮음|판단 보류)/);
   return match?.[1] || "";
+}
+
+function riskLevelClass(riskLevel = "") {
+  if (riskLevel === "높음") return "high";
+  if (riskLevel === "중간") return "medium";
+  if (riskLevel === "낮음") return "low";
+  return "hold";
+}
+
+function riskLevelIcon(riskLevel = "") {
+  if (riskLevel === "높음") return "●";
+  if (riskLevel === "중간") return "●";
+  if (riskLevel === "낮음") return "●";
+  return "●";
 }
 
 function firstScore(item) {

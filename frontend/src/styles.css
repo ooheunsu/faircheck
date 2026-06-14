@@ -176,6 +176,7 @@ textarea:focus {
 }
 
 .error-banner,
+.fixed-disclaimer,
 .trace-panel,
 .result-layout,
 .plain-panel,
@@ -192,6 +193,17 @@ textarea:focus {
   color: #7a2d22;
   background: #fff3ef;
   border-color: #efc6ba;
+}
+
+.fixed-disclaimer {
+  max-width: 880px;
+  margin: -4px auto 24px;
+  padding: 12px 14px;
+  color: #b42318;
+  background: #fff4f2;
+  border-color: #f2b8ad;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .trace-panel {
@@ -329,6 +341,26 @@ textarea:focus {
 .risk-badge {
   color: #143f7d;
   background: #e3efff;
+}
+
+.risk-badge.high {
+  color: #9f1b13;
+  background: #ffe1dd;
+}
+
+.risk-badge.medium {
+  color: #8a4b00;
+  background: #fff0c2;
+}
+
+.risk-badge.low {
+  color: #0f6b3f;
+  background: #dff4e7;
+}
+
+.risk-badge.hold {
+  color: #4b5563;
+  background: #eef1f4;
 }
 
 .search-query {
@@ -488,6 +520,11 @@ textarea:focus {
   color: #626963;
   font-size: 0.9rem;
   line-height: 1.45;
+}
+
+.statute-excerpt {
+  margin-top: 9px !important;
+  color: #48524c !important;
 }
 
 .source-details,
