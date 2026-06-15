@@ -77,10 +77,11 @@ function App() {
     <main className="app-shell">
       <section className="query-panel">
         <div className="brand-lockup">
-          <p className="eyebrow">공정거래 리스크 진단</p>
+          <p className="eyebrow">공정거래 위반 가능성 사전진단</p>
           <h1>FairCheck</h1>
           <p className="lead">
             거래 상황을 입력하면 유사 공정위 의결서와 관련 법령을 근거로
+            <br />
             위반 가능성을 사전 점검합니다.
           </p>
         </div>
@@ -115,11 +116,6 @@ function App() {
           ))}
         </div>
       </section>
-
-      <p className="fixed-disclaimer">
-        이 서비스는 공정위 의결서와 보유 법령 DB를 바탕으로 한 사전 점검 도구이며,
-        최종 법률 판단이나 법률 자문이 아닙니다.
-      </p>
 
       {error && <div className="error-banner">{error}</div>}
       {isLoading && <LoadingTrace activeStep={activeStep} />}
@@ -157,23 +153,17 @@ function LoadingTrace({ activeStep }) {
 }
 
 function RiskResult({ result }) {
-  const statusLabel = getStatusLabel(result.result_type);
   const riskLevel = extractRiskLevel(result.answer);
   const [activeStatute, setActiveStatute] = useState(null);
+  const additionalInfoItems = buildAdditionalInfoItems(result);
 
   return (
     <article className="result-layout">
       <header className="result-header">
         <div>
-          <p className="eyebrow">진단 결과</p>
-          <h2>{result.analysis?.interpreted_issue || "공정거래 쟁점 검토"}</h2>
-        </div>
-        <div className="badge-group">
-          <span className={`status-badge ${result.result_type}`}>{statusLabel}</span>
-          {riskLevel && (
-            <span className={`risk-badge ${riskLevelClass(riskLevel)}`}>
-              {riskLevelIcon(riskLevel)} 위반 가능성 {riskLevel}
-            </span>
+          <h2>진단 결과</h2>
+          {result.analysis?.interpreted_issue && (
+            <p className="result-topic">{result.analysis.interpreted_issue}</p>
           )}
         </div>
       </header>
@@ -184,11 +174,11 @@ function RiskResult({ result }) {
 
       <div className="result-grid">
         <section className="answer-card">
-          <h3>답변</h3>
           <AnswerText
             text={result.answer || ""}
             result={result}
             onOpenStatute={setActiveStatute}
+            riskLevel={riskLevel}
           />
         </section>
 
@@ -209,19 +199,24 @@ function RiskResult({ result }) {
         </aside>
       </div>
 
-      {result.analysis?.missing_facts?.length > 0 && (
-        <section className="plain-panel">
-          <h3>추가로 적으면 좋은 정보</h3>
-          <ul>
-            {result.analysis.missing_facts.map((fact) => (
+      {additionalInfoItems.length > 0 && (
+        <section className="plain-panel additional-info-card">
+          <h3>➕ 질의에 추가하면 좋은 정보</h3>
+          <ul className="analysis-info-list">
+            {additionalInfoItems.map((fact) => (
               <li key={fact}>{fact}</li>
             ))}
           </ul>
-          {result.analysis.suggested_question && (
+          {result.analysis?.suggested_question && (
             <p className="suggested-question">{result.analysis.suggested_question}</p>
           )}
         </section>
       )}
+
+      <p className="result-disclaimer">
+        ⚠️ 이 서비스는 공정위 의결서와 보유 법령 DB를 바탕으로 한 사전 점검 도구이며,
+        최종 법률 판단이나 법률 자문이 아닙니다. ⚠️
+      </p>
 
       <AdditionalEvidence result={result} onOpenStatute={setActiveStatute} />
       {activeStatute && (
@@ -231,12 +226,428 @@ function RiskResult({ result }) {
   );
 }
 
-function AnswerText({ text, result, onOpenStatute }) {
-  const rendered = useMemo(
-    () => linkAnswerReferences(text, result, onOpenStatute),
-    [text, result, onOpenStatute]
+function AnswerText({ text, result, onOpenStatute, riskLevel }) {
+  const parsed = useMemo(() => parseAnalysisAnswer(text), [text]);
+  return (
+    <AnalysisCards
+      parsed={parsed}
+      result={result}
+      onOpenStatute={onOpenStatute}
+      riskLevel={riskLevel}
+    />
   );
-  return <div className="answer-text">{rendered}</div>;
+}
+
+function AnalysisCards({ parsed, result, onOpenStatute, riskLevel }) {
+  const decisionReferences = collectReferences(result, "decision");
+  const statuteReferences = collectReferences(result, "statute");
+  const decisionItems = parsed.coreItems.filter((item) => item.kind === "decision");
+  const statuteItems = parsed.coreItems.filter((item) => item.kind === "statute");
+  const hasCoreItems = decisionItems.length > 0 || parsed.coreNotes.length > 0;
+
+  return (
+    <section className="analysis-card analysis-answer-card">
+      {riskLevel && (
+        <div className="analysis-risk-row">
+          <span className={`risk-badge ${riskLevelClass(riskLevel)}`}>
+            {riskBadgeLabel(riskLevel)}
+          </span>
+        </div>
+      )}
+
+      {parsed.summary.length > 0 && (
+        <AnalysisSection>
+          <p className="analysis-section-title">진단 요약</p>
+          {parsed.summary.map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
+          ))}
+        </AnalysisSection>
+      )}
+
+      {hasCoreItems && (
+        <AnalysisSection>
+          <p className="analysis-section-title">유사한 의결서</p>
+
+          {decisionItems.map((item, index) => (
+            <DecisionAnalysisBlock
+              key={`decision-${item.referenceId || item.title || index}`}
+              item={item}
+              reference={findDecisionReference(item, decisionReferences)}
+            />
+          ))}
+
+          {parsed.coreNotes.map((note) => (
+            <p key={note} className="analysis-note">{note}</p>
+          ))}
+        </AnalysisSection>
+      )}
+
+      {statuteItems.length > 0 && (
+        <AnalysisSection>
+          <p className="analysis-section-title">관련 법령</p>
+          {statuteItems.map((item, index) => (
+            <StatuteAnalysisBlock
+              key={`statute-${item.referenceId || item.title || index}`}
+              item={item}
+              reference={findStatuteReference(item, statuteReferences)}
+              onOpenStatute={onOpenStatute}
+            />
+          ))}
+        </AnalysisSection>
+      )}
+    </section>
+  );
+}
+
+function AnalysisSection({ children }) {
+  return (
+    <section className="analysis-section">
+      {children}
+    </section>
+  );
+}
+
+function DecisionAnalysisBlock({ item, reference }) {
+  const title = item.title || reference?.title || "의결서명 확인 필요";
+  const href = reference?.pdf_source ? decisionPdfUrl(reference.pdf_source) : "";
+  const decisionMeta = [item.violationType || reference?.violation_type, reference?.industry]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <article className="analysis-evidence-block">
+      <div className="analysis-field">
+        <p className="analysis-label">의결서명</p>
+        {href ? (
+          <a
+            className="analysis-title-link"
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            title="의결서 PDF 원문 열기"
+          >
+            {title}
+          </a>
+        ) : (
+          <p className="analysis-title-text">{title}</p>
+        )}
+        {decisionMeta && (
+          <p className="analysis-decision-meta">{decisionMeta}</p>
+        )}
+      </div>
+
+      {item.reason && (
+        <div className="analysis-field analysis-reason-field">
+          <p>{item.reason}</p>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function StatuteAnalysisBlock({ item, reference, onOpenStatute }) {
+  const title = item.title || statuteReferenceTitle(reference) || "관련 법령 확인 필요";
+  const content = item.content || cleanStatuteContent(reference?.content || "");
+  const connection = item.connection;
+
+  return (
+    <article className="analysis-evidence-block">
+      <div className="analysis-field">
+        <p className="analysis-label">법령명</p>
+        {reference ? (
+          <button
+            type="button"
+            className="analysis-title-link analysis-title-button"
+            onClick={() => onOpenStatute?.(reference)}
+            title="법령 원문 보기"
+          >
+            {title}
+          </button>
+        ) : (
+          <p className="analysis-title-text statute-title-text">{title}</p>
+        )}
+      </div>
+
+      {content && (
+        <div className="statute-emphasis-box">
+          {content}
+        </div>
+      )}
+
+      {connection && (
+        <div className="analysis-field analysis-connection-field">
+          <p className="analysis-section-title">사용자 상황과의 연결</p>
+          <p>{connection}</p>
+        </div>
+      )}
+
+    </article>
+  );
+}
+
+function parseAnalysisAnswer(answer = "") {
+  const parsed = {
+    summary: [],
+    coreItems: [],
+    coreNotes: [],
+  };
+  let section = "";
+  let currentItem = null;
+  let currentField = "";
+
+  for (const rawLine of answer.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || shouldHideAnswerLine(line)) continue;
+
+    if (/^1\.\s*진단\s*요약/.test(line)) {
+      section = "summary";
+      currentItem = null;
+      currentField = "";
+      continue;
+    }
+
+    if (/^2\.\s*핵심\s*근거/.test(line)) {
+      section = "core";
+      currentItem = null;
+      currentField = "";
+      continue;
+    }
+
+    if (/^3\.\s*확인\s*필요\s*사항/.test(line)) {
+      section = "confirmation";
+      currentItem = null;
+      currentField = "";
+      continue;
+    }
+
+    if (/^\d+\.\s/.test(line)) {
+      section = "other";
+      currentItem = null;
+      currentField = "";
+      continue;
+    }
+
+    if (section === "summary") {
+      const summaryText = summaryLineText(line);
+      if (summaryText) parsed.summary.push(summaryText);
+      continue;
+    }
+
+    if (section !== "core") continue;
+    if (isReferenceOnlyLine(line)) continue;
+
+    const labeled = parseLabeledLine(line);
+    if (labeled) {
+      const label = normalizeLabel(labeled.label);
+      const value = cleanAnswerText(labeled.value);
+      const referenceId = extractPrimaryReferenceId(labeled.value);
+
+      if (label === "의결서명") {
+        currentItem = {
+          kind: "decision",
+          title: value,
+          referenceId,
+          violationType: "",
+          reason: "",
+        };
+        parsed.coreItems.push(currentItem);
+        currentField = "title";
+        continue;
+      }
+
+      if (label === "관련법령") {
+        currentItem = {
+          kind: "statute",
+          title: value,
+          referenceId,
+          content: "",
+          connection: "",
+          extraCheck: "",
+        };
+        parsed.coreItems.push(currentItem);
+        currentField = "title";
+        continue;
+      }
+
+      if (currentItem?.kind === "decision" && label === "위반유형") {
+        currentItem.violationType = value;
+        currentField = "violationType";
+        continue;
+      }
+
+      if (currentItem?.kind === "decision" && label === "핵심근거") {
+        currentItem.reason = value;
+        currentField = "reason";
+        continue;
+      }
+
+      if (currentItem?.kind === "statute" && label === "법내용") {
+        currentItem.content = value;
+        currentField = "content";
+        continue;
+      }
+
+      if (currentItem?.kind === "statute" && label === "사용자상황과의연결") {
+        currentItem.connection = value;
+        currentField = "connection";
+        continue;
+      }
+
+      if (currentItem?.kind === "statute" && label === "추가확인필요") {
+        currentItem.extraCheck = value;
+        currentField = "extraCheck";
+        continue;
+      }
+    }
+
+    const continuation = cleanAnswerText(line);
+    if (!continuation) continue;
+
+    if (currentItem && currentField && currentField !== "title") {
+      currentItem[currentField] = appendSentence(currentItem[currentField], continuation);
+    } else {
+      parsed.coreNotes.push(continuation);
+    }
+  }
+
+  parsed.summary = uniqueTexts(parsed.summary);
+  parsed.coreNotes = uniqueTexts(parsed.coreNotes);
+  parsed.coreItems = parsed.coreItems.filter((item) => {
+    if (item.kind === "decision") return item.title || item.violationType || item.reason;
+    return item.title || item.content || item.connection;
+  });
+
+  return parsed;
+}
+
+function summaryLineText(line) {
+  const labeled = parseLabeledLine(line);
+  if (labeled && normalizeLabel(labeled.label) === "위반가능성") return "";
+  return cleanAnswerText(line);
+}
+
+function parseLabeledLine(line = "") {
+  const withoutBullet = line.replace(/^\s*[-*]\s*/, "").trim();
+  const match = withoutBullet.match(/^([^:：]+?)\s*[:：]\s*(.+)$/);
+  if (!match) return null;
+  return {
+    label: match[1],
+    value: match[2],
+  };
+}
+
+function normalizeLabel(label = "") {
+  const compact = label.replace(/\s+/g, "");
+  if (compact.includes("의결서명")) return "의결서명";
+  if (compact.includes("관련법령")) return "관련법령";
+  if (compact.includes("위반유형")) return "위반유형";
+  if (compact.includes("핵심근거") || compact.includes("관련근거")) return "핵심근거";
+  if (compact.includes("법내용") || compact.includes("원문")) return "법내용";
+  if (
+    compact.includes("사용자상황") ||
+    compact.includes("상황과의연결") ||
+    compact.includes("유사점")
+  ) {
+    return "사용자상황과의연결";
+  }
+  if (compact.includes("추가확인") || compact.includes("확인필요")) return "추가확인필요";
+  if (compact.includes("위반가능성")) return "위반가능성";
+  return compact;
+}
+
+function cleanAnswerText(value = "") {
+  return value
+    .replace(/\*\*/g, "")
+    .replace(/^#{1,6}\s*/, "")
+    .replace(/^\s*[-*]\s*/, "")
+    .replace(/^\d+\.\s*/, "")
+    .replace(/\[(?:문서|법령)[^\]]+\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function appendSentence(current = "", next = "") {
+  if (!current) return next;
+  if (!next) return current;
+  return `${current} ${next}`;
+}
+
+function uniqueTexts(items = []) {
+  return [...new Set(items.map((item) => cleanAnswerText(item)).filter(Boolean))];
+}
+
+function collectReferences(result, type) {
+  const keys = type === "decision"
+    ? ["used_decision_references", "additional_decision_references", "decision_references"]
+    : ["used_statute_references", "additional_statute_references", "statute_references"];
+  const references = [];
+  const seen = new Set();
+
+  for (const key of keys) {
+    for (const reference of result?.[key] || []) {
+      const id = reference.reference_id || JSON.stringify(reference);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      references.push(reference);
+    }
+  }
+
+  return references;
+}
+
+function findDecisionReference(item, references = []) {
+  if (item.referenceId) {
+    const byId = references.find((reference) => reference.reference_id === item.referenceId);
+    if (byId) return byId;
+  }
+
+  const title = normalizeSearchText(item.title);
+  if (!title) return null;
+
+  return references.find((reference) => {
+    const referenceTitle = normalizeSearchText(reference.title);
+    return referenceTitle && (title.includes(referenceTitle) || referenceTitle.includes(title));
+  }) || null;
+}
+
+function findStatuteReference(item, references = []) {
+  if (item.referenceId) {
+    const byId = references.find((reference) => reference.reference_id === item.referenceId);
+    if (byId) return byId;
+  }
+
+  const title = normalizeSearchText(item.title);
+  if (!title) return null;
+
+  return references.find((reference) => {
+    const candidates = statuteTitleCandidates(
+      reference.law_title || "",
+      reference.jo_number || "",
+      reference.jo_title || ""
+    ).map(normalizeSearchText);
+
+    return candidates.some((candidate) => (
+      candidate && (title.includes(candidate) || candidate.includes(title))
+    ));
+  }) || null;
+}
+
+function statuteReferenceTitle(reference) {
+  if (!reference) return "";
+  const lawTitle = reference.law_title || "";
+  const joNumber = reference.jo_number || "";
+  const joTitle = reference.jo_title || "";
+  const joPart = joNumber && joTitle ? `${joNumber}(${joTitle})` : [joNumber, joTitle].filter(Boolean).join(" ");
+  return [lawTitle, joPart].filter(Boolean).join(" ");
+}
+
+function normalizeSearchText(value = "") {
+  return cleanAnswerText(value).replace(/\s+/g, "");
+}
+
+function extractPrimaryReferenceId(value = "") {
+  const match = value.match(/\[((?:문서|법령)\s*\d+)/);
+  return match ? match[1].replace(/\s+/g, " ") : "";
 }
 
 function linkAnswerReferences(text, result, onOpenStatute) {
@@ -258,12 +669,12 @@ function linkAnswerReferences(text, result, onOpenStatute) {
     .concat(statuteAnswerLinks(result?.statute_references || [], onOpenStatute))
     .sort((left, right) => right.text.length - left.text.length);
 
-  return text.split("\n").map((line, lineIndex) => {
-    if (shouldHideAnswerLine(line)) return null;
-    if (isReferenceOnlyLine(line)) return null;
+  return answerDisplayLines(text).map((line, lineIndex) => {
+    const displayLine = decorateRiskLevelText(line);
+    if (isReferenceOnlyLine(displayLine)) return null;
 
-    const pieces = renderAnswerLine(line, lineIndex, decisionPdfById, answerLinks);
-    const lineClass = answerLineClass(line);
+    const pieces = renderAnswerLine(displayLine, lineIndex, decisionPdfById, answerLinks);
+    const lineClass = answerLineClass(displayLine);
 
     if (lineClass === "answer-section-title") {
       return (
@@ -432,6 +843,33 @@ function renderReferenceLink(label, referenceText, decisionPdfById, key) {
   return null;
 }
 
+function answerDisplayLines(text) {
+  const lines = text.split("\n");
+  const visibleLines = [];
+  let skippingConfirmationSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^3\.\s*확인\s*필요\s*사항/.test(trimmed)) {
+      skippingConfirmationSection = true;
+      continue;
+    }
+
+    if (/^\d+\.\s/.test(trimmed)) {
+      skippingConfirmationSection = false;
+    }
+
+    if (skippingConfirmationSection || shouldHideAnswerLine(line)) {
+      continue;
+    }
+
+    visibleLines.push(line);
+  }
+
+  return visibleLines;
+}
+
 function isReferenceOnlyLine(line) {
   return /^\s*-\s*근거\s*번호\s*:\s*(\[(?:문서\s*\d+(?:\s*-\s*근거\s*\d+)?|법령\s*\d+)\][,\s]*)+\s*$/.test(
     line
@@ -449,9 +887,6 @@ function shouldHideAnswerLine(line) {
 function answerLineClass(line) {
   const trimmed = line.trim();
   if (!trimmed) return "blank-line";
-  if (/(주의사항|주의|안내|최종 판단|추가 확인 필요|법률 전문가|실제 판단)/.test(trimmed)) {
-    return "answer-caution-line";
-  }
   if (/^\d+\.\s/.test(trimmed)) return "answer-section-title";
   if (/^-\s*(위반 가능성|의결서명|관련 법령|법 내용|사용자 상황|추가 확인|최종 판단|핵심 근거|위반유형)/.test(trimmed)) {
     return "answer-key-line";
@@ -489,15 +924,9 @@ function EvidenceCard({ item, type, onOpenStatute }) {
   const subtitle = type === "decision"
     ? [item.violation_type, item.industry].filter(Boolean).join(" · ")
     : item.jo_title;
-  const score = firstScore(item);
 
   return (
     <article className="evidence-card" id={referenceDomId(item.reference_id)}>
-      {type === "statute" && (
-        <div className="card-topline">
-          <span>{item.reference_id}</span>
-        </div>
-      )}
       {type === "decision" && item.pdf_source ? (
         <h4>
           <a
@@ -529,23 +958,6 @@ function EvidenceCard({ item, type, onOpenStatute }) {
       {subtitle && <p>{subtitle}</p>}
       {type === "statute" && item.content && (
         <p className="statute-excerpt">원문 일부: {statuteExcerpt(item.content)}</p>
-      )}
-      {type === "decision" && item.chunks?.length > 0 && (
-        <details className="debug-details">
-          <summary>검색 근거 정보</summary>
-          <div className="debug-meta">
-            <span>{item.reference_id}</span>
-            {score !== null && <span>score {score.toFixed(2)}</span>}
-          </div>
-          <ul className="chunk-list">
-            {item.chunks.map((chunk) => (
-              <li key={chunk.reference_id} id={referenceDomId(chunk.reference_id)}>
-                <span>{chunk.reference_id}</span>
-                {typeof chunk.score === "number" && <span>{chunk.score.toFixed(2)}</span>}
-              </li>
-            ))}
-          </ul>
-        </details>
       )}
     </article>
   );
@@ -627,6 +1039,70 @@ function cleanStatuteContent(content = "") {
     .trim();
 }
 
+function buildAdditionalInfoItems(result) {
+  const items = [
+    ...extractConfirmationItems(result.answer || ""),
+    ...extractAdditionalCheckItems(result.answer || ""),
+    ...(result.analysis?.missing_facts || []),
+  ];
+
+  return [...new Set(items.map((item) => cleanAnswerText(item)).filter(Boolean))];
+}
+
+function extractConfirmationItems(answer = "") {
+  const lines = answer.split("\n");
+  const items = [];
+  let inSection = false;
+  let currentItem = "";
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^3\.\s*확인\s*필요\s*사항/.test(trimmed)) {
+      inSection = true;
+      continue;
+    }
+
+    if (inSection && /^\d+\.\s/.test(trimmed)) {
+      break;
+    }
+
+    if (!inSection || !trimmed) {
+      continue;
+    }
+
+    if (/^-\s+/.test(trimmed)) {
+      if (currentItem) items.push(currentItem);
+      currentItem = cleanAnswerText(trimmed.replace(/^-\s+/, ""));
+    } else if (currentItem) {
+      currentItem = appendSentence(currentItem, cleanAnswerText(trimmed));
+    }
+  }
+
+  if (currentItem) items.push(currentItem);
+  return items;
+}
+
+function extractAdditionalCheckItems(answer = "") {
+  const items = [];
+
+  for (const rawLine of answer.split("\n")) {
+    const line = rawLine.trim();
+    const labeled = parseLabeledLine(line);
+    if (!labeled || normalizeLabel(labeled.label) !== "추가확인필요") continue;
+    const item = cleanAnswerText(labeled.value);
+    if (item) items.push(item);
+  }
+
+  return items;
+}
+
+function decorateRiskLevelText(line) {
+  return line.replace(
+    /(위반\s*가능성\s*:\s*)(🔴|🟡|🔵|💬)?\s*(높음|중간|낮음|판단\s*보류|판단보류)/,
+    (_, prefix, _existingIcon, level) => `${prefix}${riskLevelLabel(level)}`
+  );
+}
+
 function statuteExcerpt(content = "") {
   const cleaned = cleanStatuteContent(content).replace(/\s+/g, " ").trim();
   if (cleaned.length <= 120) return cleaned;
@@ -640,27 +1116,40 @@ function getStatusLabel(resultType) {
 }
 
 function extractRiskLevel(answer = "") {
-  const match = answer.match(/위반 가능성:\s*(높음|중간|낮음|판단 보류)/);
-  return match?.[1] || "";
+  const match = answer.match(/위반\s*가능성\s*:\s*(?:🔴|🟡|🔵|💬)?\s*(높음|중간|낮음|판단\s*보류|판단보류)/);
+  return normalizeRiskLevel(match?.[1] || "");
 }
 
 function riskLevelClass(riskLevel = "") {
-  if (riskLevel === "높음") return "high";
-  if (riskLevel === "중간") return "medium";
-  if (riskLevel === "낮음") return "low";
+  const normalized = normalizeRiskLevel(riskLevel);
+  if (normalized === "높음") return "high";
+  if (normalized === "중간") return "medium";
+  if (normalized === "낮음") return "low";
   return "hold";
 }
 
-function riskLevelIcon(riskLevel = "") {
-  if (riskLevel === "높음") return "●";
-  if (riskLevel === "중간") return "●";
-  if (riskLevel === "낮음") return "●";
-  return "●";
+function riskLevelLabel(riskLevel = "") {
+  const normalized = normalizeRiskLevel(riskLevel);
+  if (normalized === "높음") return "🔴 높음";
+  if (normalized === "중간") return "🟡 중간";
+  if (normalized === "낮음") return "🔵 낮음";
+  return "💬 판단보류";
 }
 
-function firstScore(item) {
-  const score = item.chunks?.find((chunk) => typeof chunk.score === "number")?.score;
-  return typeof score === "number" ? score : null;
+function riskBadgeLabel(riskLevel = "") {
+  const normalized = normalizeRiskLevel(riskLevel);
+  if (normalized === "높음") return "🔴 위반 가능성 높음";
+  if (normalized === "중간") return "🟡 위반 가능성 중간";
+  if (normalized === "낮음") return "🔵 위반 가능성 낮음";
+  return "💬 판단보류";
+}
+
+function normalizeRiskLevel(riskLevel = "") {
+  const compact = riskLevel.replace(/\s+/g, "");
+  if (compact === "높음") return "높음";
+  if (compact === "중간") return "중간";
+  if (compact === "낮음") return "낮음";
+  return "판단보류";
 }
 
 function formatApiError(body) {
