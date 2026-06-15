@@ -1,0 +1,137 @@
+[
+  {
+    "id": "Q001",
+    "category": "franchise_territory",
+    "expected_scope": "in_scope",
+    "query": "커피 전문 가맹점 점주로 2년째 운영 중인데, 가맹본사가 계약서상 보장된 제 영업지역을 무시하고 불과 100m 거리에 동종 직영점을 새로 오픈하겠다고 통보해 왔습니다.",
+    "gold_doc_titles": [
+      "(주)빛채 및 (주)약손명가의 가맹사업법 위반행위에 대한 건"
+    ]
+  },
+  {
+    "id": "Q002",
+    "category": "subcontract_technical_data",
+    "expected_scope": "in_scope",
+    "query": "원청 건설 대기업이 정식 계약서 발급 없이 특허 기술이 담긴 설계 도면과 소스코드를 먼저 전송하라고 요구하는 행위가 하도급법상 기술자료 요구 및 유용에 해당할 수 있나요?",
+    "gold_doc_titles": [
+      "(주)정광테크의 불공정하도급거래행위에 대한 건",
+      "(주)카펙발레오의 불공정하도급거래 행위에 대한 건",
+      "한국조선해양 주식회사 및 현대중공업 주식회사의 불공정하도급거래행위에 대한 건"
+    ]
+  },
+  {
+    "id": "Q003",
+    "category": "labor_minimum_wage",
+    "expected_scope": "out_of_scope",
+    "query": "알바 인수인계 기간에 최저보다 적게 주는 거 돼?",
+    "gold_doc_titles": []
+  },
+  {
+    "id": "Q004",
+    "category": "franchise_required_purchase_clarification",
+    "expected_scope": "needs_clarification",
+    "query": "내가 돼지고기집 체인점 사장인데 본사에서 무쌈을 납품받아서 써. 근데 납품안받고 그냥 우리집이 무쌈 장사를 해서 그거를 받아서 쓰고 싶은데 문제 되나?",
+    "gold_doc_titles": []
+  },
+  {
+    "id": "Q005",
+    "category": "franchise_required_purchase",
+    "expected_scope": "in_scope",
+    "query": "가맹본부가 특정 식자재를 필수품목으로 지정하고, 가맹점이 본사나 지정업체가 아닌 곳에서 구매하면 계약해지나 공급중단 같은 불이익을 주는 경우 문제가 될 수 있어?",
+    "gold_doc_titles": [
+      "비알코리아(주)의 가맹사업법 위반행위에 대한 건",
+      "(주)프랭크에프앤비의 가맹사업법 위반행위에 대한 건",
+      "(주)앤하우스의 가맹사업법 위반행위에 대한 건",
+      "한국파파존스(주)의 가맹사업법 위반행위에 대한 건"
+    ]
+  },
+  {
+    "id": "Q006",
+    "category": "franchise_interior_clarification",
+    "expected_scope": "needs_clarification",
+    "query": "간판이랑 인테리어 한 지 얼마 안 됐는데 본사에서 또 바꾸라고 강요한다면 어떡해?",
+    "gold_doc_titles": []
+  },
+  {
+    "id": "Q007",
+    "category": "franchise_interior_cost",
+    "expected_scope": "in_scope",
+    "query": "가맹본부가 가맹계약 갱신을 조건으로 간판과 인테리어를 바꾸라고 요구하면서 비용 대부분을 가맹점주에게 부담시키는 경우 가맹사업법상 문제가 될 수 있나요?",
+    "gold_doc_titles": [
+      "한국파파존스(주)의 가맹사업법 위반행위에 대한 건",
+      "청오디피케이(주)의 가맹사업법 위반행위에 대한 건"
+    ]
+  },
+  {
+    "id": "Q008",
+    "category": "franchise_delivery_fee",
+    "expected_scope": "in_scope",
+    "query": "가맹본부가 배달앱 주문에서 발생하는 중개수수료와 배달비 일부를 가맹점사업자에게 부담시키려고 하는데 공정거래상 문제가 될 수 있어?",
+    "gold_doc_titles": [
+      "(주)다름플러스의 가맹사업법 등 위반행위에 대한 건",
+      "(주)앤하우스의 가맹사업법 위반행위에 대한 건"
+    ]
+  },
+  {
+    "id": "Q009",
+    "category": "platform_fee_change",
+    "expected_scope": "in_scope",
+    "query": "숙박앱 플랫폼이 입점업체와 사전 협의 없이 광고상품 운영 방식이나 쿠폰 정책을 바꿔서 입점업체 부담을 늘리면 불공정거래 문제가 될 수 있어?",
+    "gold_doc_titles": [
+      "(주)놀유니버스 및 (주)야놀자의 거래상지위남용행위 등에 대한 건"
+    ]
+  },
+  {
+    "id": "Q010",
+    "category": "resale_price",
+    "expected_scope": "in_scope",
+    "query": "본사가 온라인에서 이 가격 밑으로 팔면 물건 안 준다고 하는데 괜찮은 거야?",
+    "gold_doc_titles": [
+      "(주)불스원의 재판매가격 유지행위 등에 대한 건",
+      "(주)파세코의 재판매가격유지행위 등에 대한 건",
+      "(주)아이센스 및 (주)대한의료기의 재판매가격유지행위에 대한 건"
+    ]
+  },
+  {
+    "id": "Q011",
+    "category": "bid_rigging",
+    "expected_scope": "in_scope",
+    "query": "입찰 전에 업체들끼리 이번엔 A사가 낙찰받고 나머지는 들러리 가격을 써내기로 정했다면 담합으로 볼 수 있어?",
+    "gold_doc_titles": [
+      "HDC현대산업개발(주) 발주 빌트인 특판가구 구매입찰 관련 14개 사업자의 부당한 공동행위에 대한 건",
+      "(주)우리은행 발주 금융기관용 고속스캐너 및 문서 자동분류 솔루션 구매입찰 관련 2개 사업자의 부당한 공동행위에 대한 건"
+    ]
+  },
+  {
+    "id": "Q012",
+    "category": "pharma_rebate",
+    "expected_scope": "in_scope",
+    "query": "제약회사가 병원 의사에게 자사 의약품 처방 유지를 목적으로 강의료나 자문료 명목의 금전을 반복 지급하면 리베이트로 볼 수 있어?",
+    "gold_doc_titles": [
+      "동성제약(주)의 부당한 고객유인행위에 대한 건",
+      "제일약품(주)의 부당한 고객유인행위에 대한 건",
+      "이연제약(주)의 부당한 고객유인행위에 대한 건"
+    ]
+  },
+  {
+    "id": "Q013",
+    "category": "supplier_discount_clarification",
+    "expected_scope": "needs_clarification",
+    "query": "요식업을 운영하는 사장인데, 재료를 납품받는 업체 사장님이 친해서 우리 가게만 재료비를 할인해주겠다고 합니다. 나중에 문제가 될 수 있을까요?",
+    "gold_doc_titles": []
+  },
+  {
+    "id": "Q014",
+    "category": "consumer_complaint",
+    "expected_scope": "out_of_scope",
+    "query": "배달 음식에서 이물질이 나왔는데 공정위에 신고하면 보상받을 수 있어?",
+    "gold_doc_titles": []
+  },
+  {
+    "id": "Q015",
+    "category": "wage_nonpayment",
+    "expected_scope": "out_of_scope",
+    "query": "일하고 나서 돈을 배 째고 계속 안 주는데 이자까지 다 받아낼 수 있는 방법이 있어?",
+    "gold_doc_titles": []
+  }
+]
