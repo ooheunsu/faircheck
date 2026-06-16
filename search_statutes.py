@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from statute_retrieval import StatuteRetrievalService, StatuteSearchConfig
+from statute_retriever import StatuteRetrievalService, StatuteSearchConfig
 
 
 def main() -> None:

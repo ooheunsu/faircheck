@@ -1,12 +1,39 @@
 import argparse
 import json
+import os
+from pathlib import Path
 import textwrap
 import time
 
+"""RAG 답변 생성에 필요한 프롬프트와 Gemini 호출 함수 모음.
 
+이 파일을 단독으로 실행할 수도 있지만, 지금 통합 흐름에서는
+risk_analysis_pipeline.py가 이 파일의 함수들을 import해서 사용합니다.
+주요 역할은 질문 분석, 의결서/법령 근거를 넣은 프롬프트 생성, Gemini API 호출입니다.
+"""
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_PROVIDER = "gemini"
 DEFAULT_MODEL = "gemini-2.5-flash"
 DEFAULT_ANALYZER_MODEL = "gemini-2.5-flash"
+
+
+def load_env_file(env_path=None):
+    # .env 파일을 읽어 GOOGLE_API_KEY 같은 값을 환경변수로 등록합니다.
+    # 실제 API 키는 Git에 올리면 안 되므로 .env에만 넣습니다.
+    path = Path(env_path) if env_path is not None else PROJECT_ROOT / ".env"
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ[key.strip()] = value.strip().strip('"').strip("'")
+
+
+load_env_file()
 
 
 CLEAR_OUT_OF_SCOPE_KEYWORDS = {
@@ -68,10 +95,16 @@ SYSTEM_INSTRUCTION = """\
 제공된 [검색 근거]만 사용하여 사용자의 질문에 답하세요.
 검색 근거에 포함된 유사 의결서, 위반유형, 사실관계, 판단 근거를 바탕으로
 위반 가능성과 추가 검토 포인트를 구조화해 제시하세요.
+관련 법령 근거가 함께 제공된 경우, 의결서 근거와 법령 근거를 구분하여 사용하세요.
+법령 근거는 사용자의 상황에 직접 적용을 단정하기 위한 자료가 아니라,
+유사 쟁점에서 확인해야 할 법적 기준과 위험 신호를 설명하기 위한 보조 근거입니다.
+법령 근거를 설명할 때는 조문을 단순 나열하지 말고,
+해당 법이 요구하거나 금지하는 내용이 사용자 상황의 어떤 부분과 연결되는지 쉽게 설명하세요.
 
 ### 정책과 제약(Policy & Constraints)
 - 검색 근거에 없는 사실, 사건명, 법령 조문, 판단 이유를 만들어내지 마세요.
-- 검색 근거 번호는 [문서 1], [문서 2], [문서 1-근거 1] 형식으로만 인용하세요.
+- 의결서 검색 근거 번호는 [문서 1], [문서 2], [문서 1-근거 1] 형식으로만 인용하세요.
+- 법령 검색 근거 번호는 [법령 1], [법령 2] 형식으로만 인용하세요.
 - chunk ID는 답변 본문에 직접 쓰지 마세요. 실제 chunk ID 목록은 시스템이 별도로 출력합니다.
 - 질문이 최저임금, 근로계약, 임대차, 세금, 형사, 가족관계, 일반 민원, 단순 상권 경쟁처럼
   공정거래위원회 의결서 기반 사전진단 범위를 벗어난 경우에는 억지로 의결서를 연결하지 마세요.
@@ -79,6 +112,11 @@ SYSTEM_INSTRUCTION = """\
   위반 가능성은 "판단 보류"로 표시하고 "직접 관련 있는 공정거래 의결서가 확인되지 않았습니다"라고 답하세요.
 - 범위 밖 질문에서는 핵심 근거에 관련성이 낮은 의결서를 제시하지 말고,
   "직접 관련 근거 없음"이라고 작성하세요.
+- 직접 관련 있는 의결서 근거가 약하지만 법령 근거가 관련되어 보이는 경우,
+  의결서상 유사 사례는 제한적이라고 밝히고 법령상 확인해야 할 기준을 중심으로 설명하세요.
+- 관련 법령을 설명할 때는 "법 내용", "사용자 상황과의 연결", "추가 확인 필요"를 구분하세요.
+- "사용자 상황과의 연결"에서는 사용자의 어떤 사실이 법에서 문제 삼는 행위와 유사한지 설명하세요.
+- "추가 확인 필요"에서는 최종 판단 전에 확인해야 할 계약서, 합의, 정당한 사유, 불이익, 기간, 금액 등 구체적 사실을 안내하세요.
 - 다만 공정거래 쟁점으로 이어질 수 있는 조건이 있다면, 그 조건을 확인 필요 사항에만 제시하세요.
   예: 인근 출점은 일반적으로 단순 경쟁일 수 있으나, 같은 가맹본부의 영업지역 침해라면 가맹사업법 쟁점이 될 수 있습니다.
 - 단정적으로 "위반이다" 또는 "위반이 아니다"라고 결론내리지 마세요.
@@ -105,6 +143,12 @@ ANSWER_FORMAT = """\
 - 가장 관련 높은 의결서 최대 2개만 제시하세요.
 - 각 의결서는 "의결서명 / 위반유형 / 핵심 근거 / 근거 번호" 형식으로 작성하세요.
 - 각 의결서 설명은 2문장 이내로 제한하세요.
+- 관련 법령 근거가 제공된 경우, "관련 법령" 항목을 별도로 두고 최대 3개 조문만 제시하세요.
+- 각 법령은 반드시 아래 형식으로 작성하세요.
+  - 관련 법령: 법령명 제00조(조문 제목) [법령 번호]
+  - 법 내용: 해당 조문이 요구하거나 금지하는 내용을 쉬운 말로 요약
+  - 사용자 상황과의 연결: 사용자의 어떤 사실이 해당 법령과 유사하거나 문제될 수 있는지 설명
+  - 추가 확인 필요: 최종 판단 전에 확인해야 할 사실과 주의할 점
 - 검색 근거와 사용자 질문의 사실관계가 다르면 차이를 짧게 적으세요.
 
 3. 확인 필요 사항
@@ -124,10 +168,17 @@ ANSWER_FORMAT = """\
   - 위반유형: 예시 위반유형
   - 관련 근거: 예시 근거 요약
   - 근거 번호: [문서 1-근거 1]
+
+- 관련 법령: 예시 법률 제00조(예시 조문 제목) [법령 1]
+  - 법 내용: 이 조항은 예시 행위를 금지하거나 특정 의무를 부과합니다.
+  - 사용자 상황과의 연결: 사용자 상황의 예시 사실이 이 조항에서 문제 삼는 행위와 유사해 보입니다.
+  - 추가 확인 필요: 계약서 내용, 사전 합의 여부, 불이익 발생 여부를 확인해야 합니다.
 """
 
 
 def format_context(doc_contexts, max_chars_per_chunk=1200):
+    # decision_retriever.py가 만든 의결서 doc_contexts를 Gemini 프롬프트용 텍스트로 바꿉니다.
+    # [문서 1], [문서 1-근거 1] 같은 번호도 여기서 붙습니다.
     sections = []
 
     for doc_index, context in enumerate(doc_contexts, start=1):
@@ -158,6 +209,8 @@ def format_context(doc_contexts, max_chars_per_chunk=1200):
 
 
 def build_analyzer_prompt(question):
+    # 사용자 질문이 공정거래 RAG 서비스 범위 안인지 먼저 판단하게 하는 프롬프트입니다.
+    # 예: 노동법/임대차/세금 질문이면 out_of_scope로 분류하게 합니다.
     return f"""\
 당신은 공정거래위원회 의결서 기반 RAG 서비스의 질의 분석기입니다.
 사용자 질문을 보고 공정거래 사전진단 서비스에서 바로 검색/답변할 수 있는지 판단하세요.
@@ -234,7 +287,23 @@ def format_analysis_for_prompt(search_query, analysis=None):
     return "\n".join(lines)
 
 
-def build_prompt(question, search_query, context_text, analysis=None):
+def build_prompt(
+    question,
+    search_query,
+    context_text,
+    analysis=None,
+    statute_context_text=None,
+):
+    # 최종 답변 생성용 프롬프트를 만듭니다.
+    # risk_analysis_pipeline.py는 여기에 의결서 context와 법령 context를 함께 넘깁니다.
+    statute_section = ""
+    if statute_context_text:
+        statute_section = f"""\
+
+### 관련 법령 근거(Retrieved Statutes)
+{statute_context_text}
+"""
+
     return f"""\
 {SYSTEM_INSTRUCTION}
 
@@ -249,6 +318,7 @@ def build_prompt(question, search_query, context_text, analysis=None):
 
 ### 검색 근거(Retrieved Evidence)
 {context_text}
+{statute_section}
 
 {ANSWER_FORMAT}
 
@@ -264,8 +334,19 @@ def call_gemini(
     thinking_budget=0,
     show_metadata=True,
 ):
+    # Gemini API를 실제로 호출하는 함수입니다.
+    # risk_analysis_pipeline.py에서 provider가 "gemini"일 때 이 함수가 실행됩니다.
     from google import genai
     from google.genai import types
+
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY가 설정되어 있지 않습니다. .env에 실제 Gemini API 키를 넣어주세요.")
+    if not api_key.isascii():
+        raise ValueError(
+            "GOOGLE_API_KEY에 한글 또는 비ASCII 문자가 포함되어 있습니다. "
+            "'.env'에서 placeholder나 설명 문장을 제거하고 AIza로 시작하는 실제 키만 남겨주세요."
+        )
 
     thinking_config = None
     if thinking_budget is not None:
@@ -308,6 +389,8 @@ def extract_json_object(text):
 
 
 def analyze_query_with_llm(question, model, thinking_budget=0):
+    # Gemini를 이용해 사용자 질문을 먼저 분석합니다.
+    # 분석 결과는 search_query, scope, missing_facts 같은 JSON 형태로 정리됩니다.
     prompt = build_analyzer_prompt(question)
     text = call_gemini(
         prompt,
@@ -370,6 +453,8 @@ def analyze_query_by_rule(question):
 
 
 def analyze_query(question, args):
+    # 질의 분석의 입구 함수입니다.
+    # rule 기반 범위 밖 판단을 먼저 하고, 필요하면 LLM analyzer를 호출합니다.
     if args.query_analysis == "off" or args.provider == "dry-run":
         return {
             "scope": "in_scope",
@@ -652,7 +737,7 @@ def main():
 
     search_query = analysis.get("search_query") or question
 
-    from retriever import FaircheckRetriever, RetrieverConfig
+    from decision_retriever import FaircheckRetriever, RetrieverConfig
 
     config = RetrieverConfig(
         candidate_size=args.candidate_size,

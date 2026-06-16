@@ -1,11 +1,53 @@
 import os
 import pickle
 from dataclasses import dataclass, field
+from pathlib import Path
 
-os.environ["HF_HOME"] = r"D:\faircheck\hf_cache\huggingface"
-os.environ["TRANSFORMERS_CACHE"] = r"D:\faircheck\hf_cache\transformers"
-os.environ["SENTENCE_TRANSFORMERS_HOME"] = r"D:\faircheck\hf_cache\sentence_transformers"
-os.environ["TORCH_HOME"] = r"D:\faircheck\hf_cache\torch"
+"""의결서 전용 검색기.
+
+파일 이름은 법령 검색기(statute_retriever.py)와 형식을 맞춰 decision_retriever.py로 정리했습니다.
+risk_analysis_pipeline.py에서 FaircheckRetriever를 import해 사용합니다.
+역할은 사용자 검색 질의와 비슷한 공정위 의결서 chunk를 찾고,
+LLM에 넣기 좋은 문서 단위 context(doc_contexts)를 만드는 것입니다.
+"""
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def load_env_file(env_path: str | Path | None = None) -> None:
+    # .env 파일의 KEY=VALUE 줄을 읽어서 os.environ에 넣습니다.
+    # 이렇게 하면 코드에 DB 경로나 API 키를 직접 쓰지 않아도 됩니다.
+    path = Path(env_path) if env_path is not None else PROJECT_ROOT / ".env"
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ[key.strip()] = value.strip().strip('"').strip("'")
+
+
+def env_path(name: str, default: Path) -> str:
+    # 환경변수에 경로가 있으면 그 값을 쓰고, 없으면 기본 경로를 씁니다.
+    # expanduser()는 ~/Downloads 같은 경로를 실제 사용자 폴더로 풀어줍니다.
+    return str(Path(os.getenv(name, str(default))).expanduser())
+
+
+def set_cache_env(target_name: str, source_name: str) -> None:
+    # Hugging Face 모델 캐시 경로를 .env에서 지정했을 때만 적용합니다.
+    # 지정하지 않으면 Hugging Face 라이브러리의 기본 캐시 위치를 그대로 씁니다.
+    value = os.getenv(source_name)
+    if value:
+        os.environ.setdefault(target_name, str(Path(value).expanduser()))
+
+
+load_env_file()
+set_cache_env("HF_HOME", "FAIRCHECK_HF_HOME")
+set_cache_env("TRANSFORMERS_CACHE", "FAIRCHECK_TRANSFORMERS_CACHE")
+set_cache_env("SENTENCE_TRANSFORMERS_HOME", "FAIRCHECK_SENTENCE_TRANSFORMERS_HOME")
+set_cache_env("TORCH_HOME", "FAIRCHECK_TORCH_HOME")
 
 import chromadb
 import torch
@@ -15,12 +57,30 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 @dataclass
 class RetrieverConfig:
-    chroma_dir: str = r"D:\faircheck\db\chroma_bge"
-    bm25_path: str = r"D:\faircheck\db\bm25_index.pkl"
-    collection_name: str = "decisions_bge"
+    # 의결서 검색기의 설정값입니다.
+    # default_factory는 객체가 만들어지는 시점에 .env 값을 읽기 위해 사용합니다.
+    chroma_dir: str = field(
+        default_factory=lambda: env_path(
+            "FAIRCHECK_DECISION_CHROMA_DIR",
+            PROJECT_ROOT / "db" / "chroma_bge",
+        )
+    )
+    bm25_path: str = field(
+        default_factory=lambda: env_path(
+            "FAIRCHECK_DECISION_BM25_PATH",
+            PROJECT_ROOT / "db" / "bm25_index.pkl",
+        )
+    )
+    collection_name: str = field(
+        default_factory=lambda: os.getenv("FAIRCHECK_DECISION_COLLECTION", "decisions_bge")
+    )
 
-    embedding_model_name: str = "BAAI/bge-m3"
-    reranker_model_name: str = "BAAI/bge-reranker-v2-m3"
+    embedding_model_name: str = field(
+        default_factory=lambda: os.getenv("FAIRCHECK_DECISION_EMBEDDING_MODEL", "BAAI/bge-m3")
+    )
+    reranker_model_name: str = field(
+        default_factory=lambda: os.getenv("FAIRCHECK_DECISION_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+    )
 
     dense_weight: float = 1.0
     bm25_weight: float = 1.0
@@ -55,6 +115,8 @@ class RetrieverConfig:
 
 class FaircheckRetriever:
     def __init__(self, config: RetrieverConfig | None = None):
+        # __init__은 검색기를 처음 만들 때 한 번 실행됩니다.
+        # 여기서 모델, ChromaDB, BM25 pickle을 로딩합니다.
         self.config = config or RetrieverConfig()
 
         print("검색기 로딩...")
@@ -91,6 +153,8 @@ class FaircheckRetriever:
         print("검색기 로딩 완료")
 
     def search(self, query: str, top_k: int | None = None, candidate_size: int | None = None):
+        # 의결서 검색의 전체 흐름입니다.
+        # dense 검색과 BM25 검색을 각각 수행한 뒤, RRF로 합치고 reranker로 최종 정렬합니다.
         top_k = top_k or self.config.top_k
         candidate_size = candidate_size or self.config.candidate_size
         search_query = self.rewrite_query(query)
@@ -183,6 +247,8 @@ class FaircheckRetriever:
         return [self.bm25_ids[i] for i in top_bm25_idx]
 
     def merge_with_rrf(self, dense_ids: list[str], bm25_top_ids: list[str]):
+        # RRF(Reciprocal Rank Fusion)는 여러 검색 결과의 순위를 합치는 간단한 방법입니다.
+        # dense 검색에서 높게 나온 문서와 BM25에서 높게 나온 문서 모두 점수를 얻습니다.
         rrf_scores = {}
         dense_rank_map = {}
         bm25_rank_map = {}

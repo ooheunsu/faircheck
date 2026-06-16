@@ -1,4 +1,5 @@
 chromadb
+fastapi
 FlagEmbedding
 sentence-transformers
 rank-bm25
@@ -10,3 +11,4 @@ numpy
 groq
 google-genai
 accelerate
+uvicorn
