@@ -61,6 +61,7 @@ PDF_META_KEYS = (
     "파일명",
     "pdf_filename",
     "pdf_path",
+    "의결서파일명",
 )
 
 
@@ -361,7 +362,7 @@ def build_decision_references(doc_contexts: list[dict[str, Any]]) -> list[dict[s
                 "violation_type": meta.get("위반유형", ""),
                 "industry": meta.get("업종", ""),
                 "best_doc_id": context.get("best_doc_id"),
-                "pdf_source": first_meta_value(meta, PDF_META_KEYS),
+                "pdf_source": decision_pdf_source(meta),
                 "chunks": [
                     {
                         "reference_id": f"문서 {index}-근거 {chunk_index}",
@@ -375,6 +376,38 @@ def build_decision_references(doc_contexts: list[dict[str, Any]]) -> list[dict[s
     return references
 
 
+def decision_pdf_source(meta: dict[str, Any]) -> str:
+    """프론트가 원문 PDF 링크를 만들 때 쓸 파일명 후보를 반환합니다.
+
+    현재 의결서 Chroma metadata의 `의결서파일명` 값은 실제 PDF 파일명이 아니라
+    UUID인 경우가 있습니다. 원문 PDF 파일은 대부분 `의결서제목.pdf` 형태로
+    저장되어 있으므로, UUID처럼 보이는 값은 건너뛰고 제목 기반 파일명을 우선 사용합니다.
+    """
+
+    for key in PDF_META_KEYS:
+        value = meta.get(key)
+        if value in (None, ""):
+            continue
+        source = str(value).strip()
+        if source and not looks_like_uuid(source):
+            return source
+
+    title = str(meta.get("의결서제목", "")).strip()
+    if title:
+        return f"{title}.pdf"
+
+    return ""
+
+
+def looks_like_uuid(value: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+            value.strip(),
+        )
+    )
+
+
 def build_statute_references(statutes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """프론트엔드가 법령 근거 카드를 만들 때 쓸 참조 정보를 정리합니다."""
     return [
@@ -385,6 +418,7 @@ def build_statute_references(statutes: list[dict[str, Any]]) -> list[dict[str, A
             "jo_number": statute.get("jo_number"),
             "jo_title": statute.get("jo_title"),
             "evidence_source": statute.get("evidence_source"),
+            "content": statute.get("document") or statute.get("snippet") or "",
         }
         for index, statute in enumerate(statutes, start=1)
     ]

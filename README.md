@@ -104,6 +104,9 @@ FAIRCHECK_STATUTE_BM25_PATH=C:\path\to\bm25_index.pkl
 
 # 예전 ko-sroberta 컬렉션이 아니라 BGE-M3 컬렉션을 지정합니다.
 FAIRCHECK_STATUTE_COLLECTION=statutes_bge
+
+# 의결서 원문 PDF 폴더입니다. 프론트에서 의결서 근거를 누르면 이 폴더의 PDF를 엽니다.
+FAIRCHECK_DECISION_PDF_DIR=C:\path\to\faircheck-repo\db\decision_originals
 ```
 
 검색 실행:
@@ -177,6 +180,33 @@ used_decision_references / used_statute_references
 
 additional_decision_references / additional_statute_references
   -> 후보에는 있었지만 최종 answer 본문에서 직접 인용되지는 않은 추가 참고 근거입니다.
+```
+
+## Run Frontend
+
+프론트엔드는 `frontend/` 폴더의 Vite + React 앱입니다. 백엔드 API 서버를 먼저 실행한 뒤 프론트엔드를 실행합니다.
+
+```powershell
+# 프론트엔드 폴더로 이동합니다.
+cd frontend
+
+# 최초 1회 의존성을 설치합니다.
+npm install
+
+# 로컬 프론트엔드 서버를 실행합니다.
+npm run dev
+```
+
+브라우저에서 아래 주소를 엽니다.
+
+```text
+http://127.0.0.1:5173
+```
+
+프론트엔드는 기본적으로 아래 백엔드 API를 호출합니다.
+
+```text
+http://127.0.0.1:8000/api/risk-analysis
 ```
 
 ## Retrieval Pipeline
