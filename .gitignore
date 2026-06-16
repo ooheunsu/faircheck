@@ -3,6 +3,7 @@ db/*
 !db/.gitkeep
 !db/*.dvc
 hf_cache/
+/D:*
 __pycache__/
 *.pyc
 *.pkl
