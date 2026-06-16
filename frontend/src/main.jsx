@@ -972,16 +972,16 @@ function AdditionalEvidence({ result, onOpenStatute }) {
 
   return (
     <details className="additional-panel">
-      <summary>추가 참고 근거 {additionalCount}개</summary>
+      <summary>추가로 검토된 유사 근거 {additionalCount}개</summary>
       <div className="additional-grid">
         <EvidenceSection
-          title="추가 의결서"
+          title="의결서"
           emptyText="추가 의결서가 없습니다."
           items={result.additional_decision_references}
           type="decision"
         />
         <EvidenceSection
-          title="추가 법령"
+          title="법령"
           emptyText="추가 법령이 없습니다."
           items={result.additional_statute_references}
           type="statute"
