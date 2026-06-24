@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.*
+
+# Large/generated local artifacts omitted from this archive branch.
+data/indexes/
+data/faircheck.db
