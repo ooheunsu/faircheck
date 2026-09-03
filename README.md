@@ -251,3 +251,7 @@ user query
 ## Next Step
 
 다음 단계에서는 프론트엔드에서 `/api/risk-analysis`를 호출해 입력창, 로딩 상태, 답변 영역, 의결서/법령 근거 카드를 구성합니다. 이후 의결서 카드 클릭 시 원문 PDF와 연결할 수 있도록 `decision_references`의 `pdf_source`와 chunk 정보를 활용합니다.
+
+## 담당 역할
+- RAG 검색 기능 및 공정거래 의결서 검색 기능 구현
+- FastAPI 기반 API 개발 및 검색 결과 UI 연동
